@@ -7,7 +7,7 @@ type ReqResult = reqwest::Result<reqwest::Response>;
 pub const BASE_URL: &str = "https://api.wequ.net/app";
 
 /// 设备信息结构，从api获取
-#[allow(dead_code, non_snake_case)]
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 pub struct DeviceData {
     pub id: String,
@@ -50,6 +50,7 @@ impl Deref for MyClient {
 
 impl MyClient {
 
+    /// 新建一个用于和webapi交互的client来发送ajax请求。
     pub fn new() -> Self {
         // 设置请求头
         let mut headers = header::HeaderMap::new();
@@ -82,7 +83,17 @@ impl MyClient {
             .await
     }
 
-    /// 获取设备信息
+    /// 通过webapi获取设备信息，返回一个DeviceData
+    /// 
+    /// # Errors
+    /// 
+    /// 请求成功，但应用层状态码不为200时，返回ApiError
+    /// 请求成功，但没有设备信息时，在msg后加上“未找到设备后”，ApiError
+    /// 
+    /// # Panics
+    /// 
+    /// - 发送get请求失败
+    /// - 无法将返回的信息反序列化：json => ApiResponse
     pub async fn get_device_data<T>(&self, device_id: T, password: T) -> Result<DeviceData, ApiError>
     where T: AsRef<str>
     {
@@ -97,7 +108,7 @@ impl MyClient {
             Err(ApiError { code: res.code, msg: res.msg })
         } else { match res.data {
             Some(data) => Ok(data),
-            None => Err(ApiError { code: res.code, msg: res.msg + " -- No device data." })
+            None => Err(ApiError { code: res.code, msg: res.msg + " / 未找到设备" })
         }}
         
     }
@@ -107,8 +118,6 @@ impl MyClient {
 use rumqttc::{MqttOptions, QoS, AsyncClient, EventLoop, ClientError, Event, Packet};
 use serde_json::Value;
 
-use crate::config;
-
 pub struct MyMQTT {
     pub client: AsyncClient,
     eventloop: EventLoop,
@@ -117,6 +126,8 @@ pub struct MyMQTT {
 
 impl MyMQTT {
     
+    /// 读取设备信息，返回专用的MQTT实例。
+    /// 在函数内设置了一些预制的MQTT参数。
     pub fn new(device: &DeviceData) -> Self {
         // 获取设备信息
         let device_id = device.id.to_owned();
@@ -136,14 +147,26 @@ impl MyMQTT {
     }
 
     /// 订阅设备频道
+    /// 
+    /// 订阅实例的 MyMQTT.topic 频道，然后publish一个1
+    /// 我也不知道为什么要publish，但是我在抓包的时候看到了这个publish包叠在subscribe包上，就写在这里了。
     pub async fn subscribe(&mut self) -> Result<(), ClientError> {
         debug!("MQTT subscribe topic: {}...", self.topic);
         self.client.try_subscribe(&self.topic, QoS::AtMostOnce)?;
-        debug!("MQTT publish test: 1..");
-        self.client.try_publish(&self.topic, QoS::AtMostOnce, false, [31u8,])
+        debug!("MQTT publish test: 1");
+        self.client.try_publish(&self.topic, QoS::AtMostOnce, false, "1".as_bytes())
     }
 
-    /// 异步拉取频道信息一次
+    /// 异步拉取频道信息一次，并且尝试匹配 Publish 包的 Payload。
+    /// 
+    /// 当接收到一个包时，会在显示在debug级别中。
+    /// 如果包长度过短，则在info级别中作为utf8 string输出。
+    /// 
+    /// # Errors
+    /// 
+    /// 在poll时网络连接失败，将返回 rumqttc::ConnectionError
+    /// 长度过短的payload解析为utf8 string后，返回 Ok(None)
+    /// 解析json发生错误，会输出信息到error级别中，但返回 Ok(None)
     pub async fn poll(&mut self) -> Result<Option<Value>, rumqttc::ConnectionError> {
 
         // raw bytes 2 json
@@ -163,7 +186,7 @@ impl MyMQTT {
                     debug!("Public: {:?}", pkt);
                     // 尝试parse json
 
-                    // 不解析长度过短的 payload
+                    // 不解析长度过短 payload 假设不是 json
                     if pkt.payload.len() < 10 {
                         info!("Received payload = \"{}\"", String::from_utf8_lossy(pkt.payload.as_ref()));
                         return Ok(None);

@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub retry_times: i32,
 }
 
+/// 从文件读取一个toml，返回新实例
 pub fn from_file(path: &str) -> Result<AppConfig, AnyError> {
     Ok(toml::from_str(
         fs::read_to_string(path)?.as_str()
@@ -19,7 +20,7 @@ pub fn from_file(path: &str) -> Result<AppConfig, AnyError> {
     
 }
 
-/// 保存当前实例为配置文件，会直接覆盖。
+/// 保存config demo为配置文件，会直接覆盖。
 pub fn save_demo() -> Result<(), AnyError> {
     let demo = AppConfig {
         device_id: "12345678".to_string(),

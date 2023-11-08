@@ -10,6 +10,7 @@ fn display_output(o: &Output) -> String {
     )
 }
 
+/// 尝试从Publish包中解析出shell command，同时检查shell type是否支持，失败返回空。
 pub fn extract_command<'a>(json: &'a serde_json::Value) -> Option<&'a str> {
     // 检测数据是否支持
     let shell_type = json.get("shellType")?.as_i64()?;
@@ -21,6 +22,7 @@ pub fn extract_command<'a>(json: &'a serde_json::Value) -> Option<&'a str> {
     json.get("shellContent")?.as_str()
 }
 
+/// 根据不同平台进行不同的shell调用。
 pub fn shell_runner(command: &str) {
     debug!("Shell run: {}", command);
 
