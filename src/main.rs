@@ -2,18 +2,19 @@
 //! 仅支持命令行方式运行
 //! 特点：
 //! - 运行快：Rust 语言作为编译型语言，运行速度要高于解释型语言。
-//! - 省资源：运行内存占用约 3MB，适合在一些小型设备上运行。（但可能也没那么小）
+//! - 省资源：运行内存占用约 3MB，适合在一些小型设备上运行。（但设备可能也没那么小型）
 //! - 少依赖：二进制文件直接运行，不需要环境前置，可以便携运行。
 
 pub mod client;
 pub mod shell;
 pub mod config;
 use serde_json::Value;
+use structopt::StructOpt;
 use tokio::{signal, sync::mpsc};
 use log::{debug, info, error};
 
 
-/// 处理返回的 Result<Option<Value>, rumqttc::ConnectionError>
+/// 处理返回的 `Result<Option<Value>, rumqttc::ConnectionError>``
 /// 
 /// 当链接错误 rumqttc::ConnectionError 时自动重试（< max_retry_times）
 /// 能够成功解析 shell command 就执行
@@ -48,30 +49,20 @@ fn poll_handler(
     }
 }
 
-/// 读取配置文件，读取失败则创建demo
-fn check_valid_config(path: &str) -> Option<config::AppConfig> {
-    match config::from_file(path) {
-        Ok(cfg) => Some(cfg),
-        Err(err) => {
-            // 如果不合法就创建一个新的
-            error!("Error when reading config file! {}", err);
-            info!("Created new demo config file in place.");
-            config::save_demo().unwrap();
-            None
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    // 从命令行读取配置
+    let config;
+    match config::AppConfig::from_args_safe() {
+        Ok(cfg) => config = cfg,
+        Err(err) => {println!("{}", err); return;},
+    }
 
-    // 检测配置文件是否合法
-    let config = check_valid_config(config::CONFIG_PATH);
-    if let None = config { return; }
-    let config = config.unwrap();
-    
-    
+    // 初始化log环境
+    if let Some(l) = config.log_level {
+        std::env::set_var("RUST_LOG", l);
+    }
+    env_logger::init();
 
     // 创建web client对象以调用api
     let web = client::MyClient::new();
@@ -101,7 +92,7 @@ async fn main() {
             tokio::select! {
                 // 不要在这里直接使用模式匹配Some(js)，会卡死
                 out = device_mqtt.poll() => poll_handler(
-                    out, config.retry_times, &mut retry_time
+                    out, config.max_retry_times, &mut retry_time
                 ),
                 _ = tx1.send(()) => {device_mqtt.disconnect().await; break;}
             }
