@@ -6,6 +6,7 @@ use log::{debug, info, error};
 async fn main() {
     env_logger::init();
 
+    // 创建web client对象以调用api
     let web = client::MyClient::new();
     debug!("Fetching device info...");
     let device_info = web.get_device_data("***REMOVED***", "***REMOVED***")
@@ -49,7 +50,7 @@ async fn main() {
     while let Some(res) = join_set.join_next().await {
         match res {
             Ok(()) => debug!("Thread exited."),
-            Err(err) => error!("Thread exited with error: {:#?}", err),
+            Err(err) => error!("Thread exited with error: {:?}", err),
         }
         
     }
