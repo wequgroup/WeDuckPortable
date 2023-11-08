@@ -1,7 +1,7 @@
 use reqwest::header;
 use serde::Deserialize;
 use std::{ops::Deref, time::Duration};
-use log::{debug, info};
+use log::{debug, info, error};
 
 type ReqResult = reqwest::Result<reqwest::Response>;
 pub const BASE_URL: &str = "https://api.wequ.net/app";
@@ -56,13 +56,6 @@ impl MyClient {
         headers.insert(header::ACCEPT_ENCODING, header::HeaderValue::from_static("gzip, identity"));
         headers.insert(header::ACCEPT_CHARSET, header::HeaderValue::from_static("utf-8"));
         headers.insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/json;charset=utf-8"));
-        
-        // let client = reqwest::ClientBuilder::new()
-        //     .default_headers(headers)
-        //     .timeout(Duration::new(10, 0));
-        // let client = client.build()
-        //     .expect("WebClient Build Error");
-        // MyClient { client }
 
         MyClient { 
             client: reqwest::ClientBuilder::new()
@@ -89,6 +82,7 @@ impl MyClient {
             .await
     }
 
+    /// 获取设备信息
     pub async fn get_device_data<T>(&self, device_id: T, password: T) -> Result<DeviceData, ApiError>
     where T: AsRef<str>
     {
@@ -111,12 +105,12 @@ impl MyClient {
 }
 
 use rumqttc::{MqttOptions, QoS, AsyncClient, EventLoop, ClientError, Event, Packet};
+use serde_json::Value;
 
 pub struct MyMQTT {
     pub client: AsyncClient,
     eventloop: EventLoop,
-    device_id: String,
-    device_pwd: String
+    topic: String
 }
 
 impl MyMQTT {
@@ -126,34 +120,62 @@ impl MyMQTT {
         let device_id = device.id.to_owned();
         let device_pwd = device.devicePassword.to_owned();
 
+        // 设置topic
+        let topic = format!("duck/{}", &device_id);
+
         // 设置MQTT参数
-        let mut mqtt_options = MqttOptions::new("mqtt_id_test", "mqtt-hw.wequ.net", 1883);
+        let mut mqtt_options = MqttOptions::new(&device_id, "mqtt-hw.wequ.net", 1883);
         mqtt_options.set_credentials(&device_id, &device_pwd);
         mqtt_options.set_keep_alive(Duration::from_secs(60));
 
         // 创建MQTT实例
         let ( client,  eventloop) = AsyncClient::new(mqtt_options, 10);
-        MyMQTT { client, eventloop, device_id, device_pwd }
+        MyMQTT { client, eventloop, topic }
     }
 
     /// 订阅设备频道
     pub async fn subscribe(&mut self) -> Result<(), ClientError> {
-        let channel = format!("duck/{}", self.device_id);
-        debug!("MQTT subscribe channel: {}", channel);
-        self.client.subscribe(channel, QoS::AtLeastOnce).await
+        debug!("MQTT subscribe topic: {}...", self.topic);
+        self.client.try_subscribe(&self.topic, QoS::AtMostOnce)?;
+        debug!("MQTT publish test: 1..");
+        self.client.try_publish(&self.topic, QoS::AtMostOnce, false, [31u8,])
     }
 
     /// 异步拉取频道信息一次
-    pub async fn poll(&mut self) {
+    pub async fn poll(&mut self) -> Option<Value> {
+
+        // raw bytes 2 json
+        fn json_from_payload(payload: bytes::Bytes) -> serde_json::Result<Value>{
+            let json: Value = serde_json::from_reader(payload.as_ref())?;
+            info!("Publish Payload: {:?}", json);
+            Ok(json)
+        }
+
+        // Event 解包
         match self.eventloop.poll().await {
             Ok(evt) => {
-                info!("Received: {:?}", evt);
+                debug!("Received: {:?}", evt);
+
+                // 如果是 Publish
                 if let Event::Incoming(Packet::Publish(pkt)) = evt {
-                    let msg = String::from_utf8_lossy(&pkt.payload);
-                    info!("Publish Payload: {}", msg);
-                }
+                    debug!("Public: {:?}", pkt);
+                    // 尝试parse json
+
+                    // 不解析长度过短的 payload
+                    if pkt.payload.len() < 10 {
+                        info!("Received payload = \"{}\"", String::from_utf8_lossy(pkt.payload.as_ref()));
+                        return None;
+                    }
+                    
+                    match json_from_payload(pkt.payload) {
+                        // 返回 Publish json 数据
+                        Ok(json) => Some(json),
+                        Err(err) => {error!("Error when parse json: {}", err); None}
+                    }
+                
+                } else { None }
             },
-            Err(err) => info!("!ERROR! Polling: {:?}", err),
+            Err(err) => {info!("!ERROR! Polling: {:?}", err); None},
         }
     }
 

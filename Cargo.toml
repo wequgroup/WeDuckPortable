@@ -6,9 +6,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bytes = "1.5.0"
 env_logger = "0.10.0"
 log = "0.4.20"
-reqwest = { version = "0.11.22", features = ["json", "blocking", "gzip"] }
+reqwest = { version = "0.11.22", features = ["json", "gzip"] }
+serde_json = "1.0"
 rumqttc = "0.23.0"
-serde = { version = "1.0.192", features = ["derive", "serde_derive"] }
-tokio = { version = "1.33.0", features = ["signal"] }
+toml = "0.8.8"
+
+[dependencies.tokio]
+version = "1.33.0"
+features = ["signal", "rt-multi-thread"]
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive", "serde_derive"]
+
+[profile.release]
+lto = true
