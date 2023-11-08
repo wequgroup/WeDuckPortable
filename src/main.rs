@@ -38,25 +38,43 @@ async fn main() {
     
     // 创建用于gracefully kill thread的广播
     let (tx, mut rx1) = broadcast::channel::<bool>(2);
+    let tx1 = tx.clone();
 
     // 创建 Join Handler Set 并创建线程
     let mut join_set = JoinSet::new();
     join_set.spawn(async move {
+        let mut retry_time = 0;
         loop {
             tokio::select! {
                 // 不要在这里直接使用模式匹配Some(js)，会卡死
-                js = device_mqtt.poll() => {
-                    if let Some(js) = js { 
-                        if let Some(cmd) = shell::extract_command(&js) {
-                            shell::shell_runner(cmd);
+                js_res = device_mqtt.poll() => {
+                    // 网络正常，读取到数据包
+                    if let Ok(js_ok) = js_res { 
+                        // 读取到 json，开始处理
+                        if let Some(js) = js_ok{
+                            if let Some(cmd) = shell::extract_command(&js) {
+                                shell::shell_runner(cmd);
+                            }
                         }
+                        // 重置retry次数
+                        retry_time = 0;
+
+                    } else if let Err(e) = js_res {
+                        
+                        // 超过重试次数就自行退出
+                        if config.retry_times >= 0 && retry_time > config.retry_times {
+                            error!("Polling Failed out of max retry times.");
+                            tx1.send(true).expect("Send kill signal error inside theard.");
+                        }
+
+                        retry_time += 1;
+                        error!("!ERROR Polling! Tried times:{}, {:?}", retry_time, e);
                     }
                 },
                 _ = rx1.recv() => {device_mqtt.disconnect().await; break;}
             }
         }
     });
-
     
     // 等待ctrl_c信号
     match signal::ctrl_c().await {

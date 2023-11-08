@@ -107,10 +107,12 @@ impl MyClient {
 use rumqttc::{MqttOptions, QoS, AsyncClient, EventLoop, ClientError, Event, Packet};
 use serde_json::Value;
 
+use crate::config;
+
 pub struct MyMQTT {
     pub client: AsyncClient,
     eventloop: EventLoop,
-    topic: String
+    topic: String,
 }
 
 impl MyMQTT {
@@ -126,7 +128,7 @@ impl MyMQTT {
         // 设置MQTT参数
         let mut mqtt_options = MqttOptions::new(&device_id, "mqtt-hw.wequ.net", 1883);
         mqtt_options.set_credentials(&device_id, &device_pwd);
-        mqtt_options.set_keep_alive(Duration::from_secs(60));
+        mqtt_options.set_keep_alive(Duration::from_secs(50));
 
         // 创建MQTT实例
         let ( client,  eventloop) = AsyncClient::new(mqtt_options, 10);
@@ -142,7 +144,7 @@ impl MyMQTT {
     }
 
     /// 异步拉取频道信息一次
-    pub async fn poll(&mut self) -> Option<Value> {
+    pub async fn poll(&mut self) -> Result<Option<Value>, rumqttc::ConnectionError> {
 
         // raw bytes 2 json
         fn json_from_payload(payload: bytes::Bytes) -> serde_json::Result<Value>{
@@ -164,27 +166,28 @@ impl MyMQTT {
                     // 不解析长度过短的 payload
                     if pkt.payload.len() < 10 {
                         info!("Received payload = \"{}\"", String::from_utf8_lossy(pkt.payload.as_ref()));
-                        return None;
+                        return Ok(None);
                     }
                     
                     match json_from_payload(pkt.payload) {
                         // 返回 Publish json 数据
-                        Ok(json) => Some(json),
-                        Err(err) => {error!("Error when parse json: {}", err); None}
+                        Ok(json) => Ok(Some(json)),
+                        Err(err) => {error!("Error when parse json: {}", err); Ok(None)}
                     }
                 
-                } else { None }
+                } else { Ok(None) }
             },
-            Err(err) => {info!("!ERROR! Polling: {:?}", err); None},
+            Err(err) => Err(err)
         }
     }
+
 
     /// 断开MQTT频道连接
     pub async fn disconnect(&mut self) {
         debug!("Disconnecting MQTT...");
         self.client.try_disconnect()
             .expect("Error when disconnecting MQTT");
-        self.poll().await;
+        self.poll().await.ok();
     }
     
 
