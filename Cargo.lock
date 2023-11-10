@@ -1574,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "wqy-client-rs"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bytes",
  "env_logger",

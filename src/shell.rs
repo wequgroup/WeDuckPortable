@@ -1,14 +1,7 @@
-use std::{process::{Command, Output}, io::{Error, ErrorKind}};
+use std::process::{Command, Child};
 use log::{debug, info, error};
 
-fn display_output(o: &Output) -> String {
-    format!(
-        "Output(ExitStatus = {}, stdout = \"{}\", stderr = \"{}\")",
-        o.status,
-        String::from_utf8_lossy(&o.stdout),
-        String::from_utf8_lossy(&o.stderr)
-    )
-}
+use crate::CONFIG;
 
 /// 尝试从Publish包中解析出shell command，同时检查shell type是否支持，失败返回空。
 pub fn extract_command<'a>(json: &'a serde_json::Value) -> Option<&'a str> {
@@ -23,22 +16,56 @@ pub fn extract_command<'a>(json: &'a serde_json::Value) -> Option<&'a str> {
 }
 
 /// 根据不同平台进行不同的shell调用。
-pub fn shell_runner(command: &str) {
+/// 使用全局变量：CONFIG.shell_executor
+pub fn shell_runner(command: &str) -> Option<tokio::task::JoinHandle<()>> {
+
+    let executor = &CONFIG.get().unwrap().shell_executor;
     debug!("Shell run: {}", command);
 
-    let out = if cfg!(windows) {
+    let child = 
+    if let Some(executor) = executor {
+        // 对于自定义的执行器
+        debug!("Shell executor: {}", executor);
+
+        let mut it = executor.as_str().split_ascii_whitespace();
+        Command::new(it.next()
+            .expect("Error when parsing first executor argument"))
+            .args(it)
+            .arg(command)
+            .spawn()
+
+    } else if cfg!(windows) {
         Command::new("cmd")
             .arg("/c")
             .arg(command)
-            .output()
+            .spawn()
+
     } else if cfg!(unix) {
-        Err(Error::new(ErrorKind::Other, "Not Supported System"))
+        Command::new("bash")
+            .arg("-c")
+            .arg(command)
+            .spawn()
+
     } else {
-        Err(Error::new(ErrorKind::Other, "Not Supported System"))
-    };
+        error!("shell_runner: Neither Supported Executor OS nor shell_executor specified!");
+        return None;
+
+    }.expect("shell_runner: spawn shell failed!");
     
-    match out {
-        Ok(o) => info!("Shell output: {}", display_output(&o)),
-        Err(e) => error!("Shell error: {}", e)
-    }
+    debug!("Child process #{} started.", child.id());
+    Some(tokio::spawn(wait_child_output(child)))
+
+}
+
+
+async fn wait_child_output(child: Child) {
+    let pid = child.id();
+    let o = child.wait_with_output().expect("Error waiting for child process");
+
+    info!(
+        "Child process #{} exited: Output(ExitStatus=\"{}\", stdout=\"{}\", stderr=\"{}\")",
+        pid, o.status,
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    )
 }

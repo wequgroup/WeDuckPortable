@@ -8,19 +8,23 @@
 pub mod client;
 pub mod shell;
 pub mod config;
+
 use serde_json::Value;
 use structopt::StructOpt;
-use tokio::{signal, sync::mpsc};
+use tokio::{signal, sync::{mpsc, OnceCell}};
 use log::{debug, info, error};
+
+// 仅仅在接收函数的时候初始化一次，之后只读取，不修改
+pub static CONFIG: OnceCell<config::AppConfig> = OnceCell::const_new();
 
 
 /// 处理返回的 `Result<Option<Value>, rumqttc::ConnectionError>``
 /// 
-/// 当链接错误 rumqttc::ConnectionError 时自动重试（< max_retry_times）
+/// 当链接错误 rumqttc::ConnectionError 时自动重试（< CONFIG.retry_times）
 /// 能够成功解析 shell command 就执行
+/// 使用全局变量：CONFIG.max_retry_times
 fn poll_handler(
     input: Result<Option<Value>, rumqttc::ConnectionError>,
-    max_retry_times: i32,
     retried_time: &mut i32,
 ) {
 
@@ -39,6 +43,7 @@ fn poll_handler(
         },
         Err(e) => {
             // 超过重试次数就自行退出
+            let max_retry_times = CONFIG.get().unwrap().max_retry_times;
             if max_retry_times >= 0 && *retried_time >= max_retry_times {
                 panic!("Polling Failed out of max retry times.");
             }
@@ -52,14 +57,14 @@ fn poll_handler(
 #[tokio::main]
 async fn main() {
     // 从命令行读取配置
-    let config;
     match config::AppConfig::from_args_safe() {
-        Ok(cfg) => config = cfg,
+        Ok(cfg) => CONFIG.set(cfg).unwrap(),
         Err(err) => {println!("{}", err); return;},
-    }
+    };
+    let config = CONFIG.get().unwrap();
 
     // 初始化log环境
-    if let Some(l) = config.log_level {
+    if let Some(l) = &config.log_level {
         std::env::set_var("RUST_LOG", l);
     }
     env_logger::init();
@@ -92,7 +97,7 @@ async fn main() {
             tokio::select! {
                 // 不要在这里直接使用模式匹配Some(js)，会卡死
                 out = device_mqtt.poll() => poll_handler(
-                    out, config.max_retry_times, &mut retry_time
+                    out, &mut retry_time
                 ),
                 _ = tx1.send(()) => {device_mqtt.disconnect().await; break;}
             }
@@ -110,6 +115,6 @@ async fn main() {
             // 关闭通道的接收端，让所有尝试发送的发送端立刻返回
             drop(rx);
         }
-    }
+    };
 
 }
