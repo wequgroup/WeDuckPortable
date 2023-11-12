@@ -91,17 +91,17 @@ async fn main() {
     // 创建线程组并创建线程
     let mut children = Vec::new();
     children.push(tokio::spawn(async move {
+        
         let mut retry_time = 0;
         let tx1 = (&tx).clone();
-        loop {
-            tokio::select! {
-                // 不要在这里直接使用模式匹配Some(js)，会卡死
-                out = device_mqtt.poll() => poll_handler(
-                    out, &mut retry_time
-                ),
-                _ = tx1.send(()) => {device_mqtt.disconnect().await; break;}
-            }
-        }
+
+        loop { tokio::select! {
+            // 不要在这里直接使用模式匹配Some(js)，会卡死
+            out = device_mqtt.poll() => poll_handler(
+                out, &mut retry_time
+            ),
+            _ = tx1.send(()) => {device_mqtt.disconnect().await; break;}
+        }}
     }));
 
     // 等待ctrl_c信号或所有子线程结束
