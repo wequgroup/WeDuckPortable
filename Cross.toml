@@ -2,7 +2,7 @@
 default-target = "x86_64-unknown-linux-gnu"    # use this target if none is explicitly provided
 pre-build = [                                  # additional commands to run prior to building the package
     "dpkg --add-architecture $CROSS_DEB_ARCH",
-    "sudo sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list",
+    "sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list",
     "apt clean && apt-get update -y && apt-get -y install pkg-config libssl-dev:$CROSS_DEB_ARCH"
 ]
 

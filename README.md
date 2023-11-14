@@ -1,4 +1,4 @@
-# 微趣鸭 Rust Cli 客户端
+# 神秘鸭 Rust Cli 客户端
 
 使用 Rust 写出的神秘鸭客户端，多平台支持，以命令行方式运行。
 
@@ -20,21 +20,21 @@
 rem 假设你将文件放在 D 盘根目录
 cd /d D:\
 
-rem 假设你的文件名叫 wqy-client-rs_win64.exe
+rem 假设客户端文件名叫 wqy-weduck-portable-rs_win64.exe
 rem 假设你的设备 id 是 12345678，你的设备密码是 123456
 rem 在实际使用时，请将该文本替换成实际的 ID 和密码
 
-wqy-client-rs_win64.exe -i 12345678 -p 123456 -l info
+weduck-portable-rs_win64.exe -i 12345678 -p 123456 -l info
 ```
 
 ## 运行帮助
 
 ```
-wqy-client-rs 0.1.2
+weduck-portable-rs 0.1.3
 Command line version of weduck client implemented by Rust
 
 USAGE:
-    wqy-client-rs.exe [OPTIONS] --id <device-id> --password <device-password>
+    weduck-portable-rs.exe [OPTIONS] --id <device-id> --password <device-password>
 
 FLAGS:
     -h, --help

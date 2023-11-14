@@ -1,7 +1,7 @@
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "wqy-client-rs", about = "Command line version of weduck client implemented by Rust")]
+#[structopt(name = "weduck-portable-rs", about = "Command line version of weduck client implemented by Rust")]
 pub struct AppConfig {
     /// device id, eg. 12345678
     #[structopt(short="i", long="id")]
